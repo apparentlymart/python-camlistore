@@ -16,6 +16,12 @@ class Connection(object):
         self.search_root = search_root
         self.sign_root = sign_root
 
+        from camlistore.blobclient import BlobClient
+        self.blobs = BlobClient(
+            http_session=http_session,
+            base_url=blob_root,
+        )
+
 
 # Internals of the public "connect" function, split out so we can easily test
 # it with a mock http_session while not making the public interface look weird.
