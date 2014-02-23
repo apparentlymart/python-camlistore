@@ -24,6 +24,7 @@ setup(
     ],
     install_requires=[
         "requests",
+        "python-dateutil",
     ],
     classifiers=[
         "License :: OSI Approved :: MIT License",

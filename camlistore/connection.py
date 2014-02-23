@@ -27,6 +27,12 @@ class Connection(object):
             base_url=blob_root,
         )
 
+        from camlistore.searchclient import SearchClient
+        self.searcher = SearchClient(
+            http_session=http_session,
+            base_url=search_root,
+        )
+
 
 # Internals of the public "connect" function, split out so we can easily test
 # it with a mock http_session while not making the public interface look weird.
