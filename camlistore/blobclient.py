@@ -107,7 +107,8 @@ class BlobClient(object):
                 )
 
     def put(self, payload, hash_algo_name='sha1'):
-        self.put_multi(payload, hash_algo_name=hash_algo_name)
+        result = self.put_multi(payload, hash_algo_name=hash_algo_name)
+        return result[0]
 
     def get_size_multi(self, *blobrefs):
         import json
