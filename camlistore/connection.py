@@ -1,5 +1,10 @@
 
 import json
+import pkg_resources
+
+
+version = pkg_resources.get_distribution("camlistore").version
+user_agent = "python-camlistore/%s" % version
 
 
 class Connection(object):
@@ -85,6 +90,7 @@ def connect(base_url):
 
     http_session = requests.Session()
     http_session.trust_env = False
+    http_session.headers["User-Agent"] = user_agent
     # TODO: let the caller pass in a trusted SSL cert and then turn
     # on SSL cert verification. Until we do that we're vulnerable to
     # certain types of MITM attack on our SSL connections.
