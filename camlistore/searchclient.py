@@ -82,6 +82,28 @@ class SearchResult(object):
         return "<camlistore.searchclient.SearchResult %s>" % self.blobref
 
 
+class BlobDescription(object):
+
+    def __init__(self, raw_dict):
+        self.raw_dict = raw_dict
+
+    @property
+    def blobref(self):
+        return self.raw_dict.get("blobRef")
+
+    @property
+    def type(self):
+        return self.raw_dict.get("camliType")
+
+    @property
+    def size(self):
+        return self.raw_dict.get("size")
+
+    # plus some other stuff that varies depending on type
+    # https://github.com/bradfitz/camlistore/blob/
+    # ca58231336e5711abacb059763beb06e8b2b1788/pkg/search/handler.go#L722
+
+
 class ClaimMeta(object):
 
     def __init__(self, raw_dict):
