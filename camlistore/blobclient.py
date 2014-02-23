@@ -69,3 +69,53 @@ class BlobClient(object):
             return False
         else:
             return True
+
+    def enumerate(self):
+        from urlparse import urljoin
+        import json
+        plain_enum_url = self._make_url("camli/enumerate-blobs")
+        next_enum_url = plain_enum_url
+
+        while next_enum_url is not None:
+
+            resp = self.http_session.get(next_enum_url)
+            if resp.status_code != 200:
+                from camlistore.exceptions import ServerError
+                raise ServerError(
+                    "Failed to enumerate blobs from %s: got %i %s" % (
+                        next_enum_url,
+                        resp.status_code,
+                        resp.reason,
+                    )
+                )
+
+            data = json.loads(resp.content)
+
+            if "continueAfter" in data:
+                next_enum_url = urljoin(
+                    plain_enum_url,
+                    "?after=" + data["continueAfter"],
+                )
+            else:
+                next_enum_url = None
+
+            for raw_blob_reference in data["blobs"]:
+                yield BlobMeta(
+                    raw_blob_reference["blobRef"],
+                    size=raw_blob_reference["size"],
+                    blob_client=self,
+                )
+
+
+class BlobMeta(object):
+
+    def __init__(self, blobref, size=None, blob_client=None):
+        self.blobref = blobref
+        self.size = size
+        self.blob_client = blob_client
+
+    def get_data(self):
+        return self.blob_client.get(self.blobref)
+
+    def __repr__(self):
+        return "<camlistore.blobclient.BlobMeta %s>" % self.blobref
