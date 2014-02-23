@@ -2,7 +2,12 @@
 import unittest
 from mock import MagicMock
 
-from camlistore.searchclient import SearchClient, ClaimMeta, SearchResult
+from camlistore.searchclient import (
+    SearchClient,
+    ClaimMeta,
+    SearchResult,
+    BlobDescription,
+)
 
 
 class TestSearchClient(unittest.TestCase):
@@ -47,6 +52,64 @@ class TestSearchClient(unittest.TestCase):
         self.assertEqual(
             [result.blobref for result in results],
             ["dummy-1", "dummy-2"],
+        )
+
+    def test_describe_blob(self):
+        http_session = MagicMock()
+        http_session.get = MagicMock()
+
+        response = MagicMock()
+        http_session.get.return_value = response
+
+        response.status_code = 200
+        response.content = """
+        {
+            "meta": {
+                "dummy1": {
+                    "blobRef": "dummy1"
+                },
+                "dummy2": {
+                    "blobRef": "dummy2"
+                }
+            }
+        }
+        """
+
+        searcher = SearchClient(
+            http_session=http_session,
+            base_url="http://example.com/s/",
+        )
+
+        result = searcher.describe_blob("dummy1")
+
+        http_session.get.assert_called_with(
+            'http://example.com/s/camli/search/describe',
+            params={
+                'blobref': 'dummy1',
+            }
+        )
+
+        self.assertEqual(
+            type(result),
+            BlobDescription,
+        )
+
+        self.assertEqual(
+            result.raw_dict,
+            {
+                "blobRef": "dummy1",
+            }
+        )
+        self.assertEqual(
+            result.other_raw_dicts,
+            {
+                "dummy1": {
+                    "blobRef": "dummy1",
+                },
+                "dummy2": {
+                    "blobRef": "dummy2",
+                },
+            }
         )
 
     def test_get_claims_for_permanode(self):
@@ -149,4 +212,37 @@ class TestClaimMeta(unittest.TestCase):
         self.assertEqual(
             claim_meta.target_blobref,
             "dummy-target",
+        )
+
+
+class TestBlobDescription(unittest.TestCase):
+
+    def test_describe_another(self):
+        searcher = MagicMock()
+        descr = BlobDescription(
+            searcher,
+            {},
+            other_raw_dicts={
+                "baz": {
+                    "blobRef": "baz"
+                }
+            }
+        )
+
+        searcher.describe_blob.return_value = "dummy-other"
+
+        baz = descr.describe_another("baz")
+        other = descr.describe_another("other")
+
+        self.assertEqual(
+            baz.blobref,
+            "baz"
+        )
+        self.assertEqual(
+            other,
+            "dummy-other",
+        )
+
+        searcher.describe_blob.assert_called_with(
+            "other",
         )

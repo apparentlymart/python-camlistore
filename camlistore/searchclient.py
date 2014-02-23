@@ -49,6 +49,35 @@ class SearchClient(object):
             SearchResult(x["blob"]) for x in raw_data["blobs"]
         ]
 
+    def describe_blob(self, blobref):
+        import json
+        req_url = self._make_url("camli/search/describe")
+        resp = self.http_session.get(
+            req_url,
+            params={
+                "blobref": blobref,
+            },
+        )
+
+        if resp.status_code != 200:
+            from camlistore.exceptions import ServerError
+            raise ServerError(
+                "Failed to describe %s: server returned %i %s" % (
+                    blobref,
+                    resp.status_code,
+                    resp.reason,
+                )
+            )
+
+        raw = json.loads(resp.content)
+        my_raw = raw["meta"][blobref]
+        other_raw = raw["meta"]
+        return BlobDescription(
+            self,
+            my_raw,
+            other_raw_dicts=other_raw,
+        )
+
     def get_claims_for_permanode(self, blobref):
         import json
         req_url = self._make_url("camli/search/claims")
@@ -84,8 +113,10 @@ class SearchResult(object):
 
 class BlobDescription(object):
 
-    def __init__(self, raw_dict):
+    def __init__(self, searcher, raw_dict, other_raw_dicts={}):
+        self.searcher = searcher
         self.raw_dict = raw_dict
+        self.other_raw_dicts = other_raw_dicts
 
     @property
     def blobref(self):
@@ -102,6 +133,22 @@ class BlobDescription(object):
     # plus some other stuff that varies depending on type
     # https://github.com/bradfitz/camlistore/blob/
     # ca58231336e5711abacb059763beb06e8b2b1788/pkg/search/handler.go#L722
+
+    def describe_another(self, blobref):
+        if blobref in self.other_raw_dicts:
+            return BlobDescription(
+                self.searcher,
+                self.other_raw_dicts[blobref],
+                self.other_raw_dicts,
+            )
+        else:
+            return self.searcher.describe_blob(blobref)
+
+    def __repr__(self):
+        return "<camlistore.searchclient.BlobDescription %s %s>" % (
+            self.type if self.type is not None else "(unknown)",
+            self.blobref if self.blobref is not None else "(unknown)",
+        )
 
 
 class ClaimMeta(object):
