@@ -106,6 +106,89 @@ class BlobClient(object):
                     blob_client=self,
                 )
 
+    def put(self, payload, hash_algo_name='sha1'):
+        self.put_multi(payload, hash_algo_name=hash_algo_name)
+
+    def get_size_multi(self, *blobrefs):
+        import json
+
+        form_data = {}
+        form_data["camliversion"] = "1"
+        for i, blobref in enumerate(blobrefs):
+            form_data["blob%i" % (i + 1)] = blobref
+
+        stat_url = self._make_url('camli/stat')
+        resp = self.http_session.post(stat_url, data=form_data)
+
+        if resp.status_code != 200:
+            from camlistore.exceptions import ServerError
+            raise ServerError(
+                "Failed to get sizes of blobs: got %i %s" % (
+                    resp.status_code,
+                    resp.reason,
+                )
+            )
+
+        data = json.loads(resp.content)
+
+        ret = {blobref: None for blobref in blobrefs}
+        for raw_meta in data["stat"]:
+            ret[raw_meta["blobRef"]] = int(raw_meta["size"])
+
+        return ret
+
+    def put_multi(self, *payloads, **kwargs):
+        import hashlib
+
+        upload_url = self._make_url('camli/upload')
+
+        hash_algo_name = kwargs.get('hash_algo_name', 'sha1')
+
+        blobrefs = [
+            '-'.join([
+                hash_algo_name,
+                hashlib.new(hash_algo_name, payload).hexdigest(),
+            ])
+            for payload in payloads
+        ]
+
+        sizes = self.get_size_multi(*blobrefs)
+
+        files_to_post = {}
+
+        for i, payload in enumerate(payloads):
+            blobref = blobrefs[i]
+
+            if sizes[blobref] is not None:
+                # Server already has this blob, so skip
+                continue
+
+            files_to_post[blobref] = (
+                blobref,
+                payload,
+                'application/octet-stream',
+            )
+
+        if len(files_to_post) == 0:
+            # Server already has everything, so nothing to do.
+            return blobrefs
+
+        # FIXME: We should detect if our total upload size is >32MB
+        # and automatically split it into multiple requests, since the
+        # protocol forbids upload payloads greater than 32MB.
+        resp = self.http_session.post(upload_url, files=files_to_post)
+
+        if resp.status_code != 200:
+            from camlistore.exceptions import ServerError
+            raise ServerError(
+                "Failed to upload blobs: got %i %s" % (
+                    resp.status_code,
+                    resp.reason,
+                )
+            )
+
+        return blobrefs
+
 
 class BlobMeta(object):
 

@@ -221,3 +221,92 @@ class TestBlobClient(unittest.TestCase):
             [x.size for x in blob_metas],
             [5, 9, 17],
         )
+
+    def test_get_size_multi(self):
+        http_session = MagicMock()
+        http_session.post = MagicMock()
+        response = MagicMock()
+        http_session.post.return_value = response
+
+        response.status_code = 200
+        response.content = """
+        {
+            "stat": [
+                {
+                    "blobRef": "dummy1",
+                    "size": 5
+                },
+                {
+                    "blobRef": "dummy2",
+                    "size": 9
+                }
+            ]
+        }
+        """
+
+        blobs = BlobClient(http_session, 'http://example.com/')
+        result = blobs.get_size_multi("dummy1", "dummy2")
+
+        http_session.post.assert_called_with(
+            "http://example.com/camli/stat",
+            data={
+                "camliversion": "1",
+                "blob1": "dummy1",
+                "blob2": "dummy2",
+            },
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "dummy1": 5,
+                "dummy2": 9,
+            }
+        )
+
+    def test_put_multi(self):
+        http_session = MagicMock()
+
+        class MockBlobClient(BlobClient):
+            get_size_multi = MagicMock()
+
+        http_session.post = MagicMock()
+        response = MagicMock()
+        http_session.post.return_value = response
+
+        response.status_code = 200
+
+        MockBlobClient.get_size_multi.return_value = {
+            "sha1-c9a291475b1bcaa4aa0c4cf459c29c2c52078949": 6,
+            "sha1-403c716ea737afeb54f40549cdf5727f10ba6f18": 6,
+            "sha1-1a434c0daa0b17e48abd4b59c632cf13501c7d24": None,
+        }
+
+        blobs = MockBlobClient(http_session, 'http://example.com/')
+        result = blobs.put_multi("dummy1", "dummy2", "dummy3")
+
+        MockBlobClient.get_size_multi.assert_called_with(
+            'sha1-c9a291475b1bcaa4aa0c4cf459c29c2c52078949',
+            'sha1-403c716ea737afeb54f40549cdf5727f10ba6f18',
+            'sha1-1a434c0daa0b17e48abd4b59c632cf13501c7d24',
+        )
+
+        http_session.post.assert_called_with(
+            "http://example.com/camli/upload",
+            files={
+                'sha1-1a434c0daa0b17e48abd4b59c632cf13501c7d24': (
+                    'sha1-1a434c0daa0b17e48abd4b59c632cf13501c7d24',
+                    'dummy3',
+                    'application/octet-stream',
+                )
+            }
+        )
+
+        self.assertEqual(
+            result,
+            [
+                'sha1-c9a291475b1bcaa4aa0c4cf459c29c2c52078949',
+                'sha1-403c716ea737afeb54f40549cdf5727f10ba6f18',
+                'sha1-1a434c0daa0b17e48abd4b59c632cf13501c7d24',
+            ]
+        )
