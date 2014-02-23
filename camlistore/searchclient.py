@@ -16,6 +16,39 @@ class SearchClient(object):
                 "Server does not support search interface"
             )
 
+    def query(self, expression):
+        import json
+        req_url = self._make_url("camli/search/query")
+
+        data = {
+            # TODO: Understand how constraints work and implement them
+            # https://github.com/bradfitz/camlistore/blob/
+            # ca58231336e5711abacb059763beb06e8b2b1788/pkg/search/query.go#L255
+            #"constraint": "",
+            "expression": expression,
+        }
+
+        resp = self.http_session.post(
+            req_url,
+            data=json.dumps(data),
+        )
+
+        if resp.status_code != 200:
+            from camlistore.exceptions import ServerError
+            raise ServerError(
+                "Failed to search for %r: server returned %i %s" % (
+                    expression,
+                    resp.status_code,
+                    resp.reason,
+                )
+            )
+
+        raw_data = json.loads(resp.content)
+
+        return [
+            SearchResult(x["blob"]) for x in raw_data["blobs"]
+        ]
+
     def get_claims_for_permanode(self, blobref):
         import json
         req_url = self._make_url("camli/search/claims")
@@ -38,6 +71,15 @@ class SearchClient(object):
         return [
             ClaimMeta(x) for x in raw["claims"]
         ]
+
+
+class SearchResult(object):
+
+    def __init__(self, blobref):
+        self.blobref = blobref
+
+    def __repr__(self):
+        return "<camlistore.searchclient.SearchResult %s>" % self.blobref
 
 
 class ClaimMeta(object):

@@ -2,10 +2,52 @@
 import unittest
 from mock import MagicMock
 
-from camlistore.searchclient import SearchClient, ClaimMeta
+from camlistore.searchclient import SearchClient, ClaimMeta, SearchResult
 
 
 class TestSearchClient(unittest.TestCase):
+
+    def test_query(self):
+        http_session = MagicMock()
+        http_session.post = MagicMock()
+
+        response = MagicMock()
+        http_session.post.return_value = response
+
+        response.status_code = 200
+        response.content = """
+        {
+            "blobs": [
+                {
+                    "blob": "dummy-1"
+                },
+                {
+                    "blob": "dummy-2"
+                }
+            ]
+        }
+        """
+
+        searcher = SearchClient(
+            http_session=http_session,
+            base_url="http://example.com/s/",
+        )
+
+        results = searcher.query('dummyquery')
+
+        http_session.post.assert_called_with(
+            'http://example.com/s/camli/search/query',
+            data='{"expression": "dummyquery"}',
+        )
+
+        self.assertEqual(
+            [type(result) for result in results],
+            [SearchResult, SearchResult],
+        )
+        self.assertEqual(
+            [result.blobref for result in results],
+            ["dummy-1", "dummy-2"],
+        )
 
     def test_get_claims_for_permanode(self):
         http_session = MagicMock()
