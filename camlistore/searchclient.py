@@ -181,7 +181,7 @@ class ClaimMeta(object):
         return self.raw_dict.get("target")
 
     @property
-    def date(self):
+    def time(self):
         from dateutil.parser import parse
 
         raw = self.raw_dict.get("date")

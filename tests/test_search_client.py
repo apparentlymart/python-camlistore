@@ -188,7 +188,7 @@ class TestClaimMeta(unittest.TestCase):
             "dummy-permanode",
         )
         self.assertEqual(
-            claim_meta.date,
+            claim_meta.time,
             datetime(
                 2013, 2, 13, 12, 32, 34, 123000, tzinfo=tzutc(),
             ),
