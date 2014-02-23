@@ -45,7 +45,7 @@ class BlobClient(object):
         blob_url = self._make_blob_url(blobref)
         resp = self.http_session.request('HEAD', blob_url)
         if resp.status_code == 200:
-            return resp.headers['content-length']
+            return int(resp.headers['content-length'])
         elif resp.status_code == 404:
             from camlistore.exceptions import NotFoundError
             raise NotFoundError(
