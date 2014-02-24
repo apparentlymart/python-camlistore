@@ -1,6 +1,21 @@
 
 
 class BlobClient(object):
+    """
+    Low-level interface to Camlistore's blob store interface.
+
+    The blob store is the lowest-level Camlistore API and provides only
+    for inserting and retrieving immutable, content-addressed blobs.
+
+    All of the functionality of Camlistore builds on this abstraction, but
+    most use-cases are better served by the *search* interface, which
+    can be accessed via :py:attr:`camlistore.Connection.searcher`.
+
+    Callers should not instantiate this class directly. Instead, call
+    :py:func:`camlistore.connect` to obtain a
+    :py:class:`camlistore.Connection`
+    object and access :py:attr:`camlistore.Connection.blobs`.
+    """
 
     def __init__(self, http_session, base_url):
         self.http_session = http_session
@@ -22,6 +37,13 @@ class BlobClient(object):
         return self._make_url('camli/' + blobref)
 
     def get(self, blobref):
+        """
+        Get the data for a blob, given its blobref.
+
+        Returns a :py:class:`str` of the raw bytes of the blob,
+        or raises :py:class:`camlistore.exceptions.NotFoundError` if
+        the given blobref is not known to the server.
+        """
         blob_url = self._make_blob_url(blobref)
         resp = self.http_session.get(blob_url)
         if resp.status_code == 200:
@@ -42,6 +64,13 @@ class BlobClient(object):
             )
 
     def get_size(self, blobref):
+        """
+        Get the size of a blob, given its blobref.
+
+        Returns the size of the blob as an :py:class:`int` in bytes,
+        or raises :py:class:`camlistore.exceptions.NotFoundError` if
+        the given blobref is not known to the server.
+        """
         blob_url = self._make_blob_url(blobref)
         resp = self.http_session.request('HEAD', blob_url)
         if resp.status_code == 200:
@@ -62,6 +91,16 @@ class BlobClient(object):
             )
 
     def blob_exists(self, blobref):
+        """
+        Determine if a blob exists with the given blobref.
+
+        Returns `True` if the blobref is known to the server, or `False`
+        if it is not.
+
+        To more efficiently test the presence of many blobs at once,
+        it's better to use :py:meth:`get_size_multi`; known blobs will have
+        a size, while unknown blobs will indicate ``None``.
+        """
         from camlistore.exceptions import NotFoundError
         try:
             self.get_size(blobref)
@@ -71,6 +110,20 @@ class BlobClient(object):
             return True
 
     def enumerate(self):
+        """
+        Enumerate all of the blobs on the server, in blobref order.
+
+        Returns an iterable over all of the blobs. The underlying server
+        interface returns the resultset in chunks, so beginning iteration
+        will cause one request but continued iteration may cause followup
+        requests to retrieve additional chunks.
+
+        Most applications do not need to enumerate all blobs and can instead
+        use the facilities provided by the search interface. The enumeration
+        interface exists primarily to enable the Camlistore indexer to build
+        its search index, but may be useful for other alternative index
+        implementations.
+        """
         from urlparse import urljoin
         import json
         plain_enum_url = self._make_url("camli/enumerate-blobs")
@@ -107,10 +160,37 @@ class BlobClient(object):
                 )
 
     def put(self, payload, hash_algo_name='sha1'):
+        """
+        Write a single blob into the store.
+
+        The given payload will be hashed using the algorithm given in
+        ``hash_algo_name``, which must be a hashing algorithm known both to
+        :py:mod:`hashlib` and to the target Camlistore server, and the
+        payload will then be stored as a blob.
+
+        Returns the blobref of the created blob.
+
+        This function will first check with the server to see if it has the
+        given blob, so it is not necessary for the caller to check for the
+        existence of the blob before uploading.
+
+        When writing many blobs at once -- a more common occurence than just
+        one in most applications -- it is more efficient to use
+        :py:meth:`put_multi`, since it is able to batch-upload blobs and
+        reduce the number of round-trips required to complete the operation.
+        """
         result = self.put_multi(payload, hash_algo_name=hash_algo_name)
         return result[0]
 
     def get_size_multi(self, *blobrefs):
+        """
+        Get the size of several blobs at once, given their blobrefs.
+
+        This is a batch version of :py:meth:`get_size`, returning a
+        mapping object whose keys are the request blobrefs and whose
+        values are either the size of each corresponding blob or
+        ``None`` if the blobref is not known to the server.
+        """
         import json
 
         form_data = {}
@@ -139,6 +219,18 @@ class BlobClient(object):
         return ret
 
     def put_multi(self, *payloads, **kwargs):
+        """
+        Upload several blobs to the store.
+
+        This is a batch version of :py:meth:`put`, uploading several
+        blobs at once and returning a list of their blobrefs in the
+        same order as they were provided in the arguments.
+
+        At present this method does *not* correctly handle the protocol
+        restriction that only 32MB of data can be uploaded at once, so
+        this function will fail if that limit is exceeded. It is intended
+        that this will be fixed in a future version.
+        """
         import hashlib
 
         upload_url = self._make_url('camli/upload')
@@ -192,6 +284,18 @@ class BlobClient(object):
 
 
 class BlobMeta(object):
+    """
+    Metadata about a blob.
+
+    Callers should not instantiate this class directly. It's intended only
+    to be used as the return value of methods on :py:class:`BlobClient`.
+    """
+
+    #: The blobref of the blob being described.
+    blobref = None
+
+    #: The size of the blob being described, if known. ``None`` otherwise.
+    size = None
 
     def __init__(self, blobref, size=None, blob_client=None):
         self.blobref = blobref
@@ -199,6 +303,12 @@ class BlobMeta(object):
         self.blob_client = blob_client
 
     def get_data(self):
+        """
+        Retrieve the payload of the blob described by this object.
+
+        This will call to the server to obtain the given blob, with the
+        same behavior as :py:meth:`BlobClient.get`.
+        """
         return self.blob_client.get(self.blobref)
 
     def __repr__(self):

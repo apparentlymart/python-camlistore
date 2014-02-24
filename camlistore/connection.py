@@ -8,6 +8,27 @@ user_agent = "python-camlistore/%s" % version
 
 
 class Connection(object):
+    """
+    Represents a logical connection to a camlistore server.
+
+    Most callers should not instantiate this directly, but should instead
+    use :py:func:`connect`, which implements the Camlistore server discovery
+    protocol to auto-configure an instance of this class.
+
+    Note that this does not imply a TCP or any other kind of socket connection,
+    but merely some persistent state that will be used when making requests
+    to the server. In particular, several consecutive requests via the
+    same connection may be executed via a single keep-alive HTTP connection,
+    reducing round-trip time.
+    """
+
+    #: Provides access to the server's blob store via an instance of
+    #: :py:class:`camlistore.blobclient.BlobClient`.
+    blobs = None
+
+    #: Provides access to the server's search interface via an instance of
+    #: :py:class:`camlistore.searchclient.SearchClient`.
+    searcher = None
 
     def __init__(
         self,
@@ -92,6 +113,17 @@ def _connect(base_url, http_session):
 
 
 def connect(base_url):
+    """
+    Create a connection to the Camlistore instance at the given base URL.
+
+    This function implements the Camlistore discovery protocol to recognize
+    a server and automatically determine which features are available,
+    ultimately instantiating and returning a :py:class:`Connection` object.
+
+    For now we assume an unauthenticated connection, which is generally
+    only possible when connecting via ``localhost``. In future this function
+    will be extended with some options for configuring authentication.
+    """
     import requests
 
     http_session = requests.Session()
