@@ -39,9 +39,9 @@ write a blob and retrieve it again:
 
 .. code-block:: python
 
-    blobref = conn.blobs.put("Hello, Camlistore!")
-    hello = conn.blobs.get(blobref)
-    print hello
+    blobref = conn.blobs.put(camlistore.Blob("Hello, Camlistore!"))
+    hello_blob = conn.blobs.get(blobref)
+    print hello_blob.data
 
 If things are working as expected, this should print out
 ``Hello, Camlistore!``, having successfully written that string into the store
