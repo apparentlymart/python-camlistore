@@ -6,3 +6,6 @@ from camlistore.connection import (
     Connection,
     connect,
 )
+from camlistore.blobclient import (
+    Blob,
+)

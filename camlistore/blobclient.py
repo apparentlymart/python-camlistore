@@ -40,14 +40,14 @@ class BlobClient(object):
         """
         Get the data for a blob, given its blobref.
 
-        Returns a :py:class:`str` of the raw bytes of the blob,
-        or raises :py:class:`camlistore.exceptions.NotFoundError` if
+        Returns a :py:class:`camlistore.Blob` instance describing the
+        blob, or raises :py:class:`camlistore.exceptions.NotFoundError` if
         the given blobref is not known to the server.
         """
         blob_url = self._make_blob_url(blobref)
         resp = self.http_session.get(blob_url)
         if resp.status_code == 200:
-            return resp.content
+            return Blob(resp.content, blobref=blobref)
         elif resp.status_code == 404:
             from camlistore.exceptions import NotFoundError
             raise NotFoundError(
@@ -159,16 +159,13 @@ class BlobClient(object):
                     blob_client=self,
                 )
 
-    def put(self, payload, hash_algo_name='sha1'):
+    def put(self, blob):
         """
         Write a single blob into the store.
 
-        The given payload will be hashed using the algorithm given in
-        ``hash_algo_name``, which must be a hashing algorithm known both to
-        :py:mod:`hashlib` and to the target Camlistore server, and the
-        payload will then be stored as a blob.
-
-        Returns the blobref of the created blob.
+        The blob must be given as a :py:class:`camlistore.Blob` instance.
+        Returns the blobref of the created blob, which is guaranteed
+        to match `blob.blobref` of the given blob.
 
         This function will first check with the server to see if it has the
         given blob, so it is not necessary for the caller to check for the
@@ -179,7 +176,7 @@ class BlobClient(object):
         :py:meth:`put_multi`, since it is able to batch-upload blobs and
         reduce the number of round-trips required to complete the operation.
         """
-        result = self.put_multi(payload, hash_algo_name=hash_algo_name)
+        result = self.put_multi(blob)
         return result[0]
 
     def get_size_multi(self, *blobrefs):
@@ -218,7 +215,7 @@ class BlobClient(object):
 
         return ret
 
-    def put_multi(self, *payloads, **kwargs):
+    def put_multi(self, *blobs):
         """
         Upload several blobs to the store.
 
@@ -235,22 +232,16 @@ class BlobClient(object):
 
         upload_url = self._make_url('camli/upload')
 
-        hash_algo_name = kwargs.get('hash_algo_name', 'sha1')
-
         blobrefs = [
-            '-'.join([
-                hash_algo_name,
-                hashlib.new(hash_algo_name, payload).hexdigest(),
-            ])
-            for payload in payloads
+            blob.blobref for blob in blobs
         ]
 
         sizes = self.get_size_multi(*blobrefs)
 
         files_to_post = {}
 
-        for i, payload in enumerate(payloads):
-            blobref = blobrefs[i]
+        for blob in blobs:
+            blobref = blob.blobref
 
             if sizes[blobref] is not None:
                 # Server already has this blob, so skip
@@ -258,7 +249,7 @@ class BlobClient(object):
 
             files_to_post[blobref] = (
                 blobref,
-                payload,
+                blob.data,
                 'application/octet-stream',
             )
 
@@ -283,9 +274,124 @@ class BlobClient(object):
         return blobrefs
 
 
+class Blob(object):
+    """
+    Represents a blob.
+
+    A blob is really just a raw string of bytes, but this class exists
+    to provide a convenient interface to make a blob and find its
+    blobref and size.
+
+    Although blobs are not mutable, instances of this class *are*. Mutating
+    instances of this class (by assigning to :py:attr:`Blob.data` or
+    :py:attr:`Blob.hash_func_name`) will change the blob's blobref, causing
+    it to be a different blob as far as Camlistore is concerned, although
+    it remains the same object as far as Python is concerned.
+
+    Most callers should not pass a ``blobref`` argument to the initializer,
+    since it can be computed automatically from the other arguments. If one
+    *is* provided, it *must* match the provided data or else the
+    :py:class:`camlistore.exceptions.HashMismatchError` exception will be
+    raised, allowing callers to check for a hash mismatch as a side-effect.
+    If a blobref is provided, its hash function overrides the value passed
+    in as ``hash_func_name``.
+    """
+
+    def __init__(self, data, hash_func_name='sha1', blobref=None):
+        self._blobref = blobref  # will be computed on first access
+        self.data = data
+        self.hash_func_name = hash_func_name
+        if blobref is not None:
+            (hash_func_name, hash) = blobref.split('-', 1)
+            apparent_blobref = self.blobref
+            if blobref != apparent_blobref:
+                from camlistore.exceptions import HashMismatchError
+                raise HashMismatchError(
+                    "Expected blobref %s but provided data has blobref %s" % (
+                        blobref,
+                        apparent_blobref,
+                    )
+                )
+
+    @property
+    def blobref(self):
+        """
+        The blobref of this blob.
+
+        This value will change each time either
+        :py:attr:`data` or :py:attr:`hash_func_name` is modified,
+        so callers should be careful about caching this value in a
+        local variable if modifications are expected.
+        """
+        if self._blobref is None:
+            import hashlib
+            self._blobref = '-'.join([
+                self._hash_func_name,
+                hashlib.new(self._hash_func_name, self._data).hexdigest(),
+            ])
+            pass
+
+        return self._blobref
+
+    @property
+    def size(self):
+        """
+        The size of the blob data, in bytes.
+        """
+        return len(self._data)
+
+    @property
+    def data(self):
+        """
+        The raw blob data, as a :py:class:`str`.
+
+        Assigning to this property will change :py:attr:`blobref`, and
+        effectively create a new blob as far as the server is concerned.
+        """
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        if type(value) is not str:
+            raise TypeError('Blob data must be str, not %r' % type(value))
+        self._data = value
+        self._blobref = None  # force to be recomputed on next access
+
+    @property
+    def hash_func_name(self):
+        """
+        The name of the hash function to use for this blob's blobref.
+
+        This must always be the name of a function that is supported by
+        both the local :py:mod:`hashlib` *and* the Camlistore server.
+        ``"sha1"`` is currently a safe choice for compatibility, and is thus
+        the default. ``"sha256"`` will also work with the implementations
+        available at the time of writing.
+
+        Assigning to this property will change :py:attr:`blobref`, and
+        effectively create a new blob as far as the server is concerned.
+        """
+        return self._hash_func_name
+
+    @hash_func_name.setter
+    def hash_func_name(self, value):
+        if not isinstance(value, basestring):
+            raise TypeError(
+                'Hash function name must be string, not %r' % (
+                    type(value)
+                )
+            )
+        self._hash_func_name = value
+        self._blobref = None  # force to be recomputed on next access
+
+
 class BlobMeta(object):
     """
     Metadata about a blob.
+
+    This is essentially a :py:class:`camlistore.Blob` object without the
+    blob's data, for situations where we have the identity of a blob but
+    have not yet retrieved it.
 
     Callers should not instantiate this class directly. It's intended only
     to be used as the return value of methods on :py:class:`BlobClient`.
@@ -304,7 +410,7 @@ class BlobMeta(object):
 
     def get_data(self):
         """
-        Retrieve the payload of the blob described by this object.
+        Retrieve the blob described by this object.
 
         This will call to the server to obtain the given blob, with the
         same behavior as :py:meth:`BlobClient.get`.

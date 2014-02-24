@@ -12,5 +12,8 @@ of :py:class:`camlistore.blobclient.BlobClient`.
 .. autoclass:: camlistore.blobclient.BlobClient
    :members:
 
+.. autoclass:: camlistore.Blob
+   :members:
+
 .. autoclass:: camlistore.blobclient.BlobMeta
    :members:

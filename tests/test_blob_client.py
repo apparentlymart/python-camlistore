@@ -2,7 +2,7 @@
 import unittest
 from mock import MagicMock
 
-from camlistore.blobclient import BlobClient, BlobMeta
+from camlistore.blobclient import BlobClient, BlobMeta, Blob
 
 
 class TestBlobClient(unittest.TestCase):
@@ -43,14 +43,42 @@ class TestBlobClient(unittest.TestCase):
             http_session,
             'http://example.com/blerbs/',
         )
-        result = blobs.get('dummy-blobref')
+        result = blobs.get('sha1-7928f34bd3263b86e67d11efff30d67fe7f3d176')
 
         http_session.get.assert_called_with(
-            "http://example.com/blerbs/camli/dummy-blobref"
+            "http://example.com/blerbs/camli/"
+            "sha1-7928f34bd3263b86e67d11efff30d67fe7f3d176"
         )
         self.assertEqual(
-            result,
+            type(result),
+            Blob,
+        )
+        self.assertEqual(
+            result.data,
             'dummy blob',
+        )
+
+    def test_get_hash_mismatch(self):
+        from camlistore.exceptions import HashMismatchError
+
+        http_session = MagicMock()
+        http_session.get = MagicMock()
+        response = MagicMock()
+        http_session.get.return_value = response
+
+        response.status_code = 200
+        response.content = 'dummy blob'
+
+        blobs = BlobClient(
+            http_session,
+            'http://example.com/blerbs/',
+        )
+        self.assertRaises(
+            HashMismatchError,
+            lambda: blobs.get('dummy-blobref'),
+        )
+        http_session.get.assert_called_with(
+            "http://example.com/blerbs/camli/dummy-blobref"
         )
 
     def test_get_not_found(self):
@@ -283,7 +311,11 @@ class TestBlobClient(unittest.TestCase):
         }
 
         blobs = MockBlobClient(http_session, 'http://example.com/')
-        result = blobs.put_multi("dummy1", "dummy2", "dummy3")
+        result = blobs.put_multi(
+            Blob("dummy1"),
+            Blob("dummy2"),
+            Blob("dummy3"),
+        )
 
         MockBlobClient.get_size_multi.assert_called_with(
             'sha1-c9a291475b1bcaa4aa0c4cf459c29c2c52078949',
@@ -309,4 +341,89 @@ class TestBlobClient(unittest.TestCase):
                 'sha1-403c716ea737afeb54f40549cdf5727f10ba6f18',
                 'sha1-1a434c0daa0b17e48abd4b59c632cf13501c7d24',
             ]
+        )
+
+
+class TestBlob(unittest.TestCase):
+
+    def test_instantiate(self):
+        blob = Blob('hello')
+        self.assertEqual(
+            blob.hash_func_name,
+            'sha1',
+        )
+        self.assertEqual(
+            blob.data,
+            'hello',
+        )
+        self.assertEqual(
+            blob.blobref,
+            'sha1-aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d',
+        )
+
+    def test_instantiate_different_hash(self):
+        blob = Blob('hello', hash_func_name='sha256')
+        self.assertEqual(
+            blob.hash_func_name,
+            'sha256',
+        )
+        self.assertEqual(
+            blob.data,
+            'hello',
+        )
+        self.assertEqual(
+            blob.blobref,
+            'sha256-'
+            '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+        )
+
+    def test_change_hash_func(self):
+        blob = Blob('hello')
+        self.assertEqual(
+            blob.blobref,
+            'sha1-aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d',
+        )
+        blob.hash_func_name = 'sha256'
+        self.assertEqual(
+            blob.blobref,
+            'sha256-'
+            '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+        )
+
+    def test_change_data(self):
+        blob = Blob('hello')
+        self.assertEqual(
+            blob.blobref,
+            'sha1-aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d',
+        )
+        blob.data = 'world'
+        self.assertEqual(
+            blob.blobref,
+            'sha1-7c211433f02071597741e6ff5a8ea34789abbf43',
+        )
+
+    def test_unicode_data(self):
+        self.assertRaises(
+            TypeError,
+            lambda: Blob(u'hello'),
+        )
+
+        blob = Blob('hello')
+
+        def change_data():
+            blob.data = u'hello'
+
+        self.assertRaises(
+            TypeError,
+            change_data,
+        )
+
+    def test_func_name_as_func(self):
+        import hashlib
+
+        # must pass a function name, not a function
+        # (we need the name so we can make the blobref prefix)
+        self.assertRaises(
+            TypeError,
+            lambda: Blob('hello', hashlib.sha1),
         )

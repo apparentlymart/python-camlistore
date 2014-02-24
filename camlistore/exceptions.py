@@ -39,3 +39,11 @@ class ServerFeatureUnavailableError(Exception):
     an indexer, and a caller tries to use search features.
     """
     pass
+
+
+class HashMismatchError(Exception):
+    """
+    There was a mismatch between an expected hash value an an actual hash
+    value.
+    """
+    pass
