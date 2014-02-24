@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="camlistore",
-    version="dev",
+    version="0.0.1",
     description="Camlistore Client Library",
     packages=find_packages(),
     author="Martin Atkins",
